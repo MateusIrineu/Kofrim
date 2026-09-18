@@ -2,8 +2,11 @@ import json
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
+#core
 from core.services.gemini_service import analisar_mensagem
 from core.models import Usuario, Transacao
+from core.services.formatacao_service import formatar_valor
+from core.services.whatsapp_service import enviar_mensagem_whatsapp
 
 @csrf_exempt
 def whatsapp_webhook(request):
@@ -35,6 +38,18 @@ def whatsapp_webhook(request):
                 if criado:
                     print(f'👤 Novo usuário cadastrado automaticamente: {telefone_cliente}')
 
+                    texto_boas_vindas = (
+                    "👋 Olá! Sou o *Kofrim*, seu novo assistente financeiro inteligente!\n\n"
+                    "Vi que é a sua primeira vez por aqui. 🎉\n\n"
+                    "Comigo, você não precisa preencher planilhas chatas. Basta mandar seus gastos de forma natural, como se falasse com um amigo!\n\n"
+                    "💡 *Exemplos:*\n"
+                    "🍕 _'Gastei 45 de pizza'_\n"
+                    "🚗 _'20 reais de uber'_\n"
+                    "💰 _'Recebi 1500 de salário'_\n\n"
+                    "Vou processar essa sua primeira mensagem agora mesmo! 👇"
+                )
+                    enviar_mensagem_whatsapp(telefone_cliente, texto_boas_vindas)
+
                 nova_transacao = Transacao.objects.create(
                     usuario=usuario_atual,
                     tipo=dados_estruturados['tipo'],
@@ -43,6 +58,12 @@ def whatsapp_webhook(request):
                     descricao=dados_estruturados['descricao'],
                 )
                 print(f"💾 Transação salva no banco! ID: {nova_transacao.id}")
+
+                valor_formatado = formatar_valor(nova_transacao.valor)
+                categoria_formatada = nova_transacao.categoria.capitalize()
+                texto_resposta = f'✅ Tudo certo!\n\nRegistrei uma *{nova_transacao.tipo}* de {valor_formatado} na categoria *{categoria_formatada}*.\n(ID: {nova_transacao.id})'
+
+                enviar_mensagem_whatsapp(telefone_cliente, texto_resposta)
 
             else:
                 print("❌ A mensagem não era financeira. Nada foi salvo no banco.")
