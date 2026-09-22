@@ -1,4 +1,5 @@
 import json
+from django.db.models import Sum
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
@@ -50,20 +51,72 @@ def whatsapp_webhook(request):
                 )
                     enviar_mensagem_whatsapp(telefone_cliente, texto_boas_vindas)
 
-                nova_transacao = Transacao.objects.create(
-                    usuario=usuario_atual,
-                    tipo=dados_estruturados['tipo'],
-                    valor=dados_estruturados['valor'],
-                    categoria=dados_estruturados['categoria'],
-                    descricao=dados_estruturados['descricao'],
-                )
-                print(f"💾 Transação salva no banco! ID: {nova_transacao.id}")
+                if dados_estruturados['tipo'] == 'consulta':
+                    print("📊 Usuário solicitou resumo. Calculando...")
 
-                valor_formatado = formatar_valor(nova_transacao.valor)
-                categoria_formatada = nova_transacao.categoria.capitalize()
-                texto_resposta = f'✅ Tudo certo!\n\nRegistrei uma *{nova_transacao.tipo}* de {valor_formatado} na categoria *{categoria_formatada}*.\n(ID: {nova_transacao.id})'
+                    total_receitas = Transacao.objects.filter(usuario=usuario_atual, tipo='receita'). aggregate(Sum('valor'))['valor__sum'] or 0
+                    total_despesas = Transacao.objects.filter(usuario=usuario_atual, tipo='despesa'). aggregate(Sum('valor'))['valor__sum'] or 0
+                    saldo = total_receitas - total_despesas
 
-                enviar_mensagem_whatsapp(telefone_cliente, texto_resposta)
+                    texto_resumo = (
+                        "📊 *Resumo do seu Kofrim*\n\n"
+                        f"📈 Entradas: {formatar_valor(total_receitas)}\n"
+                        f"📉 Saídas: {formatar_valor(total_despesas)}\n\n"
+                        f"💰 *Saldo Atual: {formatar_valor(saldo)}*"
+                    )
+
+                    enviar_mensagem_whatsapp(telefone_cliente, texto_resumo)
+
+                elif dados_estruturados['tipo'] == 'exclusao':
+                    id_alvo = dados_estruturados.get('id_referencia')
+                    try:
+                        transacao = Transacao.objects.get(id=id_alvo, usuario=usuario_atual)
+                        transacao.delete()
+
+                        enviar_mensagem_whatsapp(telefone_cliente, f"🗑️ Tudo certo! A transação #{id_alvo} foi apagada.")
+                    except Transacao.DoesNotExist:
+                        enviar_mensagem_whatsapp(telefone_cliente, f"❌ Não encontrei a transação #{id_alvo}. Ela já pode ter sido apagada ou o ID está errado.")
+
+                elif dados_estruturados['tipo'] == 'edicao':
+                    id_alvo = dados_estruturados.get('id_referencia')
+                    try:
+                        transacao = Transacao.objects.get(id=id_alvo, usuario=usuario_atual)
+
+                        if dados_estruturados.get('valor'):
+                            transacao.valor = dados_estruturados['valor']
+                        if dados_estruturados.get('categoria'):
+                            transacao.categoria = dados_estruturados['categoria']
+                        if dados_estruturados.get('descricao'):
+                            transacao.descricao = dados_estruturados['descricao']
+
+                        transacao.save()
+
+                        texto_resposta = (
+                            f"✏️ Transação #{id_alvo} atualizada com sucesso!\n\n"
+                            f"Novo valor: {formatar_valor(transacao.valor)}\n"
+                            f"Categoria: {transacao.categoria.capitalize()}"
+                        )
+
+                        enviar_mensagem_whatsapp(telefone_cliente, texto_resposta)
+
+                    except Transacao.DoesNotExist:
+                        enviar_mensagem_whatsapp(telefone_cliente, f"❌ Não encontrei a transação #{id_alvo} para editar.")
+
+                else:
+                    nova_transacao = Transacao.objects.create(
+                        usuario=usuario_atual,
+                        tipo=dados_estruturados['tipo'],
+                        valor=dados_estruturados['valor'],
+                        categoria=dados_estruturados['categoria'],
+                        descricao=dados_estruturados['descricao'],
+                    )
+                    print(f"💾 Transação salva no banco! ID: {nova_transacao.id}")
+
+                    valor_formatado = formatar_valor(nova_transacao.valor)
+                    categoria_formatada = nova_transacao.categoria.capitalize()
+                    texto_resposta = f'✅ Tudo certo!\n\nRegistrei uma *{nova_transacao.tipo}* de {valor_formatado} na categoria *{categoria_formatada}*.\n(ID: {nova_transacao.id})'
+
+                    enviar_mensagem_whatsapp(telefone_cliente, texto_resposta)
 
             else:
                 print("❌ A mensagem não era financeira. Nada foi salvo no banco.")

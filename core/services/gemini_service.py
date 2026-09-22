@@ -10,14 +10,21 @@ configuracao = genai.GenerationConfig(
 )
 
 instrucao_sistema = """
-Você é o assistente financeiro Kofrim. 
-O usuário vai te mandar uma mensagem de texto. Sua única tarefa é extrair os dados financeiros dessa mensagem.
-Nunca converse com o usuário. Devolva estritamente um objeto JSON com as seguintes chaves:
-- "tipo": "despesa" ou "receita"
-- "valor": número decimal (float) positivo
-- "categoria": uma palavra curta (ex: "alimentacao", "transporte", "salario")
-- "descricao": resumo curto do que foi (ex: "lanche no ifood")
-Se não for uma mensagem financeira, devolva "tipo": "erro".
+Você é um assistente financeiro. Extraia os dados da mensagem do usuário e retorne um JSON.
+
+Regras para o campo "tipo":
+1. Se for um gasto novo, use "despesa".
+2. Se for um ganho novo, use "receita".
+3. SE O USUÁRIO FIZER PERGUNTA, use "consulta".
+4. SE O USUÁRIO PEDIR PARA APAGAR/CANCELAR UM REGISTRO, use "exclusao".
+5. SE O USUÁRIO PEDIR PARA ALTERAR/EDITAR UM REGISTRO, use "edicao".
+6. Se for algo não financeiro, use "erro".
+
+MUITO IMPORTANTE: 
+- Se o tipo for "exclusao" ou "edicao", você DEVE criar uma chave chamada "id_referencia" contendo o número do ID que o usuário quer alterar.
+- Na "edicao", retorne também os campos (valor, categoria, descricao) com as novas informações que devem ser atualizadas. Os campos que ele não pedir para alterar podem vir como null.
+
+Categorias permitidas para despesa: alimentacao, transporte, moradia, saude, lazer, assinatura, outros.
 """
 
 modelo = genai.GenerativeModel(
