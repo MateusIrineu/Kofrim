@@ -25,11 +25,11 @@ class Transacao(models.Model):
     ]
 
     CATEGORIAS = [
-        ('mercado', 'Mercado'),
-        ('alimentacao', 'Alimentação'),
-        ('servicos', 'Serviços (Contas)'),
-        ('transporte', 'Transporte'),
-        ('outros', 'Outros')
+        ('alimentacao', 'Alimentação'),   # inclui mercado, farmácia, consultas, saúde
+        ('servicos',    'Serviços'),       # academia, streaming, contas, assinaturas
+        ('transporte',  'Transporte'),     # Uber, combustível, ônibus
+        ('lazer',       'Lazer'),          # cinema, shows, viagens, hobbies
+        ('outros',      'Outros'),
     ]
 
     usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='transacoes')
