@@ -59,12 +59,3 @@ Errou algum registro? É só pedir:
 - **Integração:** Webhooks nativos da API do WhatsApp Cloud (Meta)
 
 ---
-
-## 👨‍💻 Para Desenvolvedores (Modo Mock)
-O sistema conta com um recurso de bypass da Inteligência Artificial projetado para testes locais ou economia de cota de API.
-Se você iniciar o body de sua mensagem via Insomnia/Postman com a tag `!mock ` seguida de um JSON formatado, o servidor ignora a comunicação externa com o Gemini e processa a requisição usando seus dados simulados:
-
-```json
-!mock {"tipo": "despesa", "valor": 10, "categoria": "alimentacao", "descricao": "Cafe", "data": "2026-10-02"}
-```
-
