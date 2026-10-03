@@ -46,9 +46,14 @@ def whatsapp_webhook(request):
             print("\n" + "="*40)
             print(f"Telefone: {telefone_cliente}")
             print(f"Mensagem: {texto_recebido}")
-            print("Enviando para o Gemini analisar...")
-            dados_estruturados = analisar_mensagem(texto_recebido)
-            print(f"Resultado do Gemini: {json.dumps(dados_estruturados, indent=2, ensure_ascii=False)}")
+            if texto_recebido.startswith('!mock '):
+                print("MODO MOCK ATIVADO: Ignorando Gemini e lendo JSON direto da mensagem.")
+                texto_json = texto_recebido.replace('!mock ', '', 1)
+                dados_estruturados = json.loads(texto_json)
+            else:
+                print("Enviando para o Gemini analisar...")
+                dados_estruturados = analisar_mensagem(texto_recebido)
+            print(f"Resultado processado: {json.dumps(dados_estruturados, indent=2, ensure_ascii=False)}")
             print("="*40 + "\n")
 
             if dados_estruturados.get('tipo') != 'erro':
@@ -244,3 +249,4 @@ def whatsapp_webhook(request):
             return JsonResponse({'erro': str(e)}, status=400)
 
     return JsonResponse({'erro': 'Metodo nao permitido'}, status=405)
+

@@ -1,13 +1,10 @@
-﻿import google.generativeai as genai
+﻿from google import genai
+from google.genai import types
 import json
 from django.conf import settings
 
-genai.configure(api_key=settings.GEMINI_API_KEY)
-
-configuracao = genai.GenerationConfig(
-    temperature=0.0,
-    response_mime_type="application/json",
-)
+# Inicializa o cliente com a API key
+client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 instrucao_sistema = """
 Voce e um assistente financeiro. Extraia os dados da mensagem do usuario e retorne um JSON.
@@ -32,7 +29,6 @@ CAMPO "data" (OBRIGATORIO para despesa e receita):
   - "dia 10 do mes passado" -> "2026-09-10"
   - "dia 5" -> "2026-10-05"
   - "ontem" -> "2026-10-01"
-  - "semana passada" -> use o domingo da semana passada como "2026-09-25"
   - "hoje" ou sem mencao de data -> null
 
 CATEGORIAS PERMITIDAS PARA DESPESA:
@@ -50,7 +46,7 @@ EXEMPLOS DE CLASSIFICACAO:
 - "recebi 1500 salario dia 1" -> {"tipo": "receita", "valor": 1500, "categoria": "outros", "descricao": "Salario", "data": "2026-10-01"}
 
 REGRAS PARA O TIPO "extrato":
-Quando o tipo for "extrato", voce DEVE incluir obrigatoriamente dois campos extras: "subtipo" e "periodo".
+Quando o tipo for "extrato", voce DEVE incluir obrigatoriamente os campos: "subtipo", "periodo" e "quantidade".
 
 Campo "subtipo":
 - Use "despesas" se mencionar: gastos, gasto, despesas, despesa, saidas, saida, gastei, compras, pagamentos, o que saiu, o que gastei, quanto gastei.
@@ -63,12 +59,9 @@ Campo "periodo":
 - Use "mes" como PADRAO se nao mencionar periodo, ou se mencionar: mes, esse mes, mensal, do mes.
 - Use "ano" se mencionar: ano, esse ano, anual, do ano.
 
-Campo "quantidade" (OBRIGATORIO para extrato):
-- Extraia o numero de periodos que o usuario quer ver. Use 1 como PADRAO se nao mencionar.
-- Exemplos: "ultimos 2 meses" -> quantidade: 2 | "ultimas 3 semanas" -> quantidade: 3 | "esse mes" -> quantidade: 1
-- "ultimos 6 meses" -> {"tipo": "extrato", "subtipo": "ambos", "periodo": "mes", "quantidade": 6}
-- "gastos das ultimas 2 semanas" -> {"tipo": "extrato", "subtipo": "despesas", "periodo": "semana", "quantidade": 2}
-- "ultimos 2 meses" -> {"tipo": "extrato", "subtipo": "ambos", "periodo": "mes", "quantidade": 2}
+Campo "quantidade":
+- Extraia o numero de periodos. Use 1 como PADRAO se nao mencionar.
+- "ultimos 2 meses" -> quantidade: 2 | "ultimas 3 semanas" -> quantidade: 3 | "esse mes" -> quantidade: 1
 
 REGRAS PARA O TIPO "criar_meta":
 - "titulo": nome da meta. Se nao mencionado, use "Minha Meta".
@@ -83,15 +76,19 @@ MUITO IMPORTANTE:
 - Na "edicao", retorne tambem os campos (valor, categoria, descricao) com as novas informacoes. Campos nao alterados vem como null.
 """
 
-modelo = genai.GenerativeModel(
-    model_name='gemini-3.8-flash',
-    generation_config=configuracao,
-    system_instruction=instrucao_sistema
+configuracao = types.GenerateContentConfig(
+    system_instruction=instrucao_sistema,
+    temperature=0.0,
+    response_mime_type="application/json",
 )
 
 def analisar_mensagem(texto_usuario):
     try:
-        resposta = modelo.generate_content(texto_usuario)
+        resposta = client.models.generate_content(
+            model='gemini-3.8-flash',
+            contents=texto_usuario,
+            config=configuracao,
+        )
         dados_extraidos = json.loads(resposta.text)
         return dados_extraidos
     except Exception as e:
