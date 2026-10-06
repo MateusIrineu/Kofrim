@@ -1,4 +1,4 @@
-﻿from datetime import date
+﻿from django.utils import timezone
 from django.db.models import Sum
 from core.models import Meta, Transacao
 from core.services.formatacao_service import formatar_valor
@@ -84,7 +84,7 @@ def calcular_limite_diario(usuario):
     if not meta or not meta.data_limite or usuario.orcamento_mensal <= 0:
         return None
         
-    hoje = date.today()
+    hoje = timezone.localdate()
     dias_restantes = (meta.data_limite - hoje).days
     
     if dias_restantes <= 0 or meta.valor_atual >= meta.valor_alvo:

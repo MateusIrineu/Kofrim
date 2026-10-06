@@ -1,7 +1,9 @@
-﻿import json
-from datetime import date, timedelta, datetime
+import json
+import logging
+from datetime import date, timedelta
 from django.db.models import Sum
 from django.http import JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
 #core
@@ -10,6 +12,11 @@ from core.models import Usuario, Transacao
 from core.services.formatacao_service import formatar_valor
 from core.services.whatsapp_service import enviar_mensagem_whatsapp
 from core.services import meta_service
+from core.services.validacao_service import (
+    validar_transacao, parse_valor, parse_data, parse_id, normalizar_categoria,
+)
+
+logger = logging.getLogger(__name__)
 
 # --- Helpers de periodo ---
 
@@ -21,7 +28,7 @@ LABELS_PERIODO = {
 }
 
 def _data_inicio_periodo(periodo: str) -> date:
-    hoje = date.today()
+    hoje = timezone.localdate()
     if periodo == 'dia':
         return hoje
     if periodo == 'semana':
@@ -36,6 +43,7 @@ def whatsapp_webhook(request):
         return JsonResponse({'status': 'Aguardando verificacao do Meta.'})
 
     elif request.method == 'POST':
+        telefone_cliente = None
         try:
             dados = json.loads(request.body)
             mensagem_info = dados['entry'][0]['changes'][0]['value']['messages'][0]
@@ -136,53 +144,59 @@ def whatsapp_webhook(request):
                     enviar_mensagem_whatsapp(telefone_cliente, texto_extrato)
 
                 elif tipo == 'exclusao':
-                    id_alvo = dados_estruturados.get('id_referencia')
-                    try:
-                        transacao = Transacao.objects.get(id=id_alvo, usuario=usuario_atual)
-                        transacao.delete()
-                        enviar_mensagem_whatsapp(telefone_cliente, f"Tudo certo! A transacao #{id_alvo} foi apagada.")
-                    except Transacao.DoesNotExist:
-                        enviar_mensagem_whatsapp(telefone_cliente, f"Nao encontrei a transacao #{id_alvo}. Ela ja pode ter sido apagada ou o ID esta errado.")
+                    id_alvo = parse_id(dados_estruturados.get('id_referencia'))
+                    if id_alvo is None:
+                        enviar_mensagem_whatsapp(telefone_cliente, "Nao entendi qual transacao apagar. Informe o numero (ID) do registro.")
+                    else:
+                        try:
+                            transacao = Transacao.objects.get(id=id_alvo, usuario=usuario_atual)
+                            transacao.delete()
+                            enviar_mensagem_whatsapp(telefone_cliente, f"Tudo certo! A transacao #{id_alvo} foi apagada.")
+                        except Transacao.DoesNotExist:
+                            enviar_mensagem_whatsapp(telefone_cliente, f"Nao encontrei a transacao #{id_alvo}. Ela ja pode ter sido apagada ou o ID esta errado.")
 
                 elif tipo == 'edicao':
-                    id_alvo = dados_estruturados.get('id_referencia')
-                    try:
-                        transacao = Transacao.objects.get(id=id_alvo, usuario=usuario_atual)
-                        if dados_estruturados.get('valor'):
-                            transacao.valor = dados_estruturados['valor']
-                        if dados_estruturados.get('categoria'):
-                            transacao.categoria = dados_estruturados['categoria']
-                        if dados_estruturados.get('descricao'):
-                            transacao.descricao = dados_estruturados['descricao']
-                        transacao.save()
-                        texto_resposta = (
-                            f"Transacao #{id_alvo} atualizada com sucesso!\n\n"
-                            f"Novo valor: {formatar_valor(transacao.valor)}\n"
-                            f"Categoria: {transacao.categoria.capitalize()}"
-                        )
-                        enviar_mensagem_whatsapp(telefone_cliente, texto_resposta)
-                    except Transacao.DoesNotExist:
-                        enviar_mensagem_whatsapp(telefone_cliente, f"Nao encontrei a transacao #{id_alvo} para editar.")
+                    id_alvo = parse_id(dados_estruturados.get('id_referencia'))
+                    if id_alvo is None:
+                        enviar_mensagem_whatsapp(telefone_cliente, "Nao entendi qual transacao editar. Informe o numero (ID) do registro.")
+                    else:
+                        try:
+                            transacao = Transacao.objects.get(id=id_alvo, usuario=usuario_atual)
+                            if dados_estruturados.get('valor') is not None:
+                                novo_valor = parse_valor(dados_estruturados['valor'])
+                                if novo_valor is None:
+                                    enviar_mensagem_whatsapp(telefone_cliente, "Nao consegui entender o novo valor. Tente: 'Muda o valor do registro 3 para 90'.")
+                                    return JsonResponse({'status': 'recebido'}, status=200)
+                                transacao.valor = novo_valor
+                            if dados_estruturados.get('categoria'):
+                                transacao.categoria = normalizar_categoria(dados_estruturados['categoria'])
+                            if dados_estruturados.get('descricao'):
+                                transacao.descricao = str(dados_estruturados['descricao']).strip()[:200]
+                            transacao.save()
+                            texto_resposta = (
+                                f"Transacao #{id_alvo} atualizada com sucesso!\n\n"
+                                f"Novo valor: {formatar_valor(transacao.valor)}\n"
+                                f"Categoria: {transacao.categoria.capitalize()}"
+                            )
+                            enviar_mensagem_whatsapp(telefone_cliente, texto_resposta)
+                        except Transacao.DoesNotExist:
+                            enviar_mensagem_whatsapp(telefone_cliente, f"Nao encontrei a transacao #{id_alvo} para editar.")
 
                 elif tipo == 'criar_meta':
-                    titulo_meta = dados_estruturados.get('titulo', 'Minha Meta')
-                    valor_alvo  = dados_estruturados.get('valor_alvo')
-                    data_str    = dados_estruturados.get('data_limite')
-                    data_limite = None
-                    if data_str:
-                        try:
-                            data_limite = datetime.strptime(data_str, '%Y-%m-%d').date()
-                        except ValueError:
-                            pass
-                    if not valor_alvo:
+                    titulo_meta = str(dados_estruturados.get('titulo') or 'Minha Meta').strip()[:100]
+                    valor_alvo  = parse_valor(dados_estruturados.get('valor_alvo'))
+                    data_limite = parse_data(dados_estruturados.get('data_limite'))
+                    if valor_alvo is None:
                         enviar_mensagem_whatsapp(telefone_cliente, "Nao entendi o valor da meta. Tente: 'Quero juntar R$ 5.000 ate dezembro'")
+                    elif data_limite and data_limite <= timezone.localdate():
+                        enviar_mensagem_whatsapp(telefone_cliente, "O prazo da meta precisa ser uma data futura. Tente novamente com outra data.")
                     else:
                         _, texto_meta = meta_service.criar_meta(usuario_atual, titulo_meta, valor_alvo, data_limite)
                         enviar_mensagem_whatsapp(telefone_cliente, texto_meta)
 
                 elif tipo == 'contribuir_meta':
-                    valor = dados_estruturados.get('valor')
-                    if not valor:
+                    valor = parse_valor(dados_estruturados.get('valor'))
+                    if valor is None:
                         enviar_mensagem_whatsapp(telefone_cliente, "Nao entendi o valor da contribuicao. Tente: 'Guardei 500 para minha meta'")
                     else:
                         texto_contribuicao = meta_service.contribuir_para_meta(usuario_atual, valor)
@@ -194,23 +208,20 @@ def whatsapp_webhook(request):
 
                 else:
                     # despesa ou receita
-                    data_str = dados_estruturados.get('data')
-                    data_transacao = None
-                    if data_str:
-                        try:
-                            data_transacao = datetime.strptime(data_str, '%Y-%m-%d').date()
-                        except ValueError:
-                            pass
+                    dados_limpos, erro_validacao = validar_transacao(dados_estruturados)
+                    if erro_validacao:
+                        enviar_mensagem_whatsapp(telefone_cliente, erro_validacao)
+                        return JsonResponse({'status': 'recebido'}, status=200)
 
                     kwargs_transacao = dict(
                         usuario=usuario_atual,
-                        tipo=dados_estruturados['tipo'],
-                        valor=dados_estruturados['valor'],
-                        categoria=dados_estruturados['categoria'],
-                        descricao=dados_estruturados['descricao'],
+                        tipo=dados_limpos['tipo'],
+                        valor=dados_limpos['valor'],
+                        categoria=dados_limpos['categoria'],
+                        descricao=dados_limpos['descricao'],
                     )
-                    if data_transacao:
-                        kwargs_transacao['data'] = data_transacao
+                    if dados_limpos['data']:
+                        kwargs_transacao['data'] = dados_limpos['data']
 
                     nova_transacao = Transacao.objects.create(**kwargs_transacao)
                     print(f"Transacao salva! ID: {nova_transacao.id} | Data: {nova_transacao.data.strftime('%d/%m/%Y')}")
@@ -244,9 +255,20 @@ def whatsapp_webhook(request):
             print("Notificacao de status recebida e ignorada.")
             return JsonResponse({'status': 'ignorado'}, status=200)
 
-        except Exception as e:
-            print(f"Erro inesperado: {e}")
-            return JsonResponse({'erro': str(e)}, status=400)
+        except json.JSONDecodeError:
+            logger.warning("Payload invalido recebido no webhook.")
+            return JsonResponse({'erro': 'Payload invalido'}, status=400)
+
+        except Exception:
+            logger.exception("Erro inesperado ao processar mensagem do WhatsApp")
+            if telefone_cliente:
+                try:
+                    enviar_mensagem_whatsapp(
+                        telefone_cliente,
+                        "Ops! Tive um problema ao processar sua mensagem. Tente novamente em instantes."
+                    )
+                except Exception:
+                    logger.exception("Falha ao enviar mensagem de erro ao usuario")
+            return JsonResponse({'status': 'erro_interno'}, status=200)
 
     return JsonResponse({'erro': 'Metodo nao permitido'}, status=405)
-

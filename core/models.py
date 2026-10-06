@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 class Usuario(models.Model):
     telefone = models.CharField(max_length=20, unique=True, help_text=" Ex: 5584999999999")
@@ -25,7 +26,8 @@ class Transacao(models.Model):
     ]
 
     CATEGORIAS = [
-        ('alimentacao', 'Alimentação'),   # inclui mercado, farmácia, consultas, saúde
+        ('alimentacao', 'Alimentação'),   # restaurantes, delivery, mercado
+        ('saude',       'Saúde'),          # farmácia, consultas, exames, plano de saúde
         ('servicos',    'Serviços'),       # academia, streaming, contas, assinaturas
         ('transporte',  'Transporte'),     # Uber, combustível, ônibus
         ('lazer',       'Lazer'),          # cinema, shows, viagens, hobbies
@@ -38,7 +40,7 @@ class Transacao(models.Model):
     categoria = models.CharField(max_length=30, choices=CATEGORIAS, default='outros')
     descricao = models.CharField(max_length=200, help_text="Ex: Ifood, Uber, Luz")
 
-    data = models.DateField(auto_now_add=True)
+    data = models.DateField(default=timezone.localdate)
 
     def __str__(self):
         return f"{self.tipo.capitalize()} - {self.categoria}: R$ {self.valor} ({self.data.strftime('%d/%m')})"
