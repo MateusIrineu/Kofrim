@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Agent Context & Documentation
+AGENTS.md
+
+# Static files collected for production
+staticfiles/
+

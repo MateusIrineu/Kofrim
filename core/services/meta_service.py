@@ -1,4 +1,4 @@
-﻿from django.utils import timezone
+from django.utils import timezone
 from django.db.models import Sum
 from core.models import Meta, Transacao
 from core.services.formatacao_service import formatar_valor
@@ -11,7 +11,15 @@ def _barra_progresso(atual, alvo):
     return '🟩' * blocos_cheios + '⬜' * blocos_vazios + f" {porcentagem}%"
 
 def criar_meta(usuario, titulo, valor_alvo, data_limite=None):
-    # Apaga meta anterior se existir
+    # Guarda um resumo da meta anterior (se existir) antes de substitui-la, para avisar o usuario
+    anterior = Meta.objects.filter(usuario=usuario).first()
+    meta_anterior = None
+    if anterior:
+        meta_anterior = {
+            'titulo': anterior.titulo,
+            'valor_atual': anterior.valor_atual,
+            'valor_alvo': anterior.valor_alvo,
+        }
     Meta.objects.filter(usuario=usuario).delete()
     
     nova_meta = Meta.objects.create(
@@ -37,6 +45,12 @@ def criar_meta(usuario, titulo, valor_alvo, data_limite=None):
     else:
         texto += "Sem data definida. Acompanharemos o % do seu progresso!"
         
+    if meta_anterior:
+        texto += (
+            f"\n\n⚠️ Esta meta substituiu a anterior, *{meta_anterior['titulo']}* "
+            f"(guardado: {formatar_valor(meta_anterior['valor_atual'])} de {formatar_valor(meta_anterior['valor_alvo'])})."
+        )
+
     return nova_meta, texto
 
 def contribuir_para_meta(usuario, valor):

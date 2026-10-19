@@ -16,3 +16,9 @@ class TransacaoAdmin(admin.ModelAdmin):
     list_display = ('tipo', 'categoria', 'valor', 'usuario', 'data')
     list_filter = ('tipo', 'categoria', 'data')
     search_fields = ('descricao',)
+
+@admin.register(MensagemProcessada)
+class MensagemProcessadaAdmin(admin.ModelAdmin):
+    list_display = ('message_id', 'telefone', 'processado_em')
+    search_fields = ('message_id', 'telefone')
+    list_filter = ('processado_em',)

@@ -1,7 +1,9 @@
-﻿from google import genai
-from google.genai import types
+from datetime import timedelta
 import json
+from google import genai
+from google.genai import types
 from django.conf import settings
+from django.utils import timezone
 
 # Inicializa o cliente com a API key
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
@@ -19,17 +21,14 @@ Regras para o campo "tipo":
 7. SE O USUARIO QUISER CRIAR/DEFINIR UMA META FINANCEIRA, use "criar_meta". Veja as regras abaixo.
 8. SE O USUARIO QUISER ADICIONAR DINHEIRO A SUA META (guardar, juntar, depositar, contribuir), use "contribuir_meta". Veja as regras abaixo.
 9. SE O USUARIO QUISER VER O STATUS/PROGRESSO DA SUA META, use "consultar_meta".
-10. Se for algo nao financeiro, use "erro".
+10. SE O USUARIO INFORMAR/DEFINIR/ALTERAR SEU ORCAMENTO OU RENDA MENSAL (ex.: "meu orcamento mensal e 5000", "minha renda livre e 3500"), use "definir_orcamento". Veja as regras abaixo.
+11. Se for algo nao financeiro (saudacao como "oi", "bom dia", pedido de ajuda ou qualquer outro assunto), use "erro".
 
 CAMPO "data" (OBRIGATORIO para despesa e receita):
 - Se o usuario mencionar uma data especifica, extraia e retorne no formato "YYYY-MM-DD".
 - Se nao mencionar data, retorne null (o sistema usara a data de hoje automaticamente).
-- O ano de referencia e 2026. O mes atual e outubro de 2026.
-- Exemplos de interpretacao de datas:
-  - "dia 10 do mes passado" -> "2026-09-10"
-  - "dia 5" -> "2026-10-05"
-  - "ontem" -> "2026-10-01"
-  - "hoje" ou sem mencao de data -> null
+- Considere a data de hoje informada no contexto da mensagem para calcular datas relativas ("ontem", "dia 10 do mes passado", "dia 5").
+- "hoje" ou sem mencao de data -> null
 
 CATEGORIAS PERMITIDAS PARA DESPESA:
 - "alimentacao": restaurante, lanchonete, delivery, ifood, rappi, padaria, mercado, supermercado, feira, hortifruti. APENAS comida e bebida.
@@ -71,27 +70,41 @@ REGRAS PARA O TIPO "criar_meta":
 REGRAS PARA O TIPO "contribuir_meta":
 - "valor": valor numerico a ser adicionado a meta (obrigatorio).
 
+REGRAS PARA O TIPO "definir_orcamento":
+- "valor": valor numerico do orcamento mensal (obrigatorio). Ex.: "meu orcamento mensal e 5000" -> {"tipo": "definir_orcamento", "valor": 5000}
+
 MUITO IMPORTANTE:
 - Se o tipo for "exclusao" ou "edicao", voce DEVE criar uma chave "id_referencia" com o numero do ID.
 - Na "edicao", retorne tambem os campos (valor, categoria, descricao) com as novas informacoes. Campos nao alterados vem como null.
 """
 
-configuracao = types.GenerateContentConfig(
-    system_instruction=instrucao_sistema,
-    temperature=0.0,
-    response_mime_type="application/json",
-)
+
+def _montar_configuracao():
+    hoje = timezone.localdate()
+    ontem = hoje - timedelta(days=1)
+    contexto_data = (
+        f"\nCONTEXTO DE DATA ATUAL: Hoje e {hoje.isoformat()} "
+        f"(ano {hoje.year}, mes {hoje.month:02d}, dia {hoje.day:02d}; ontem foi {ontem.isoformat()}).\n"
+    )
+    return types.GenerateContentConfig(
+        system_instruction=instrucao_sistema + contexto_data,
+        temperature=0.0,
+        response_mime_type="application/json",
+    )
+
+
+configuracao = _montar_configuracao()
+
 
 def analisar_mensagem(texto_usuario):
     try:
         resposta = client.models.generate_content(
             model='gemini-3.8-flash',
             contents=texto_usuario,
-            config=configuracao,
+            config=_montar_configuracao(),
         )
         dados_extraidos = json.loads(resposta.text)
         return dados_extraidos
     except Exception as e:
         print(f'Erro no Gemini: {e}')
-        return {'tipo': 'erro', 'mensagem': 'Falha na extracao de dados.'}
-
+        return {'tipo': 'erro', 'mensagem': 'Falha na extracao de dados.', 'falha_tecnica': True}

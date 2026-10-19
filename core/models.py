@@ -44,3 +44,12 @@ class Transacao(models.Model):
 
     def __str__(self):
         return f"{self.tipo.capitalize()} - {self.categoria}: R$ {self.valor} ({self.data.strftime('%d/%m')})"
+
+
+class MensagemProcessada(models.Model):
+    message_id = models.CharField(max_length=120, unique=True)
+    telefone = models.CharField(max_length=20, blank=True, default='')
+    processado_em = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.message_id} ({self.telefone})"
