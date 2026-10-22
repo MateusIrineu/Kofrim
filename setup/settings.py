@@ -20,7 +20,7 @@ WEBHOOK_ASSINCRONO = config('WEBHOOK_ASSINCRONO', default=False, cast=bool)
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=lambda v: [h.strip() for h in v.split(',') if h.strip()])
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,.ngrok-free.app,.ngrok-free.dev,.ngrok.io', cast=lambda v: [h.strip() for h in v.split(',') if h.strip()])
 CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='', cast=lambda v: [origin.strip() for origin in v.split(',') if origin.strip()])
 
 
