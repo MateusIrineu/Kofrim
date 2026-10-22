@@ -60,6 +60,20 @@ sequenceDiagram
 ### 1. Processamento Assíncrono com Daemon Thread (Zero Timeout)
 * **O Desafio:** A Meta Cloud API exige resposta `HTTP 200` em menos de **3 a 5 segundos** para o webhook. Chamadas de LLM (Gemini) e conexões de banco podem eventualmente ultrapassar essa janela sob instabilidade de rede, fazendo a Meta presumir que o servidor caiu e reenviar a mesma mensagem em loop.
 * **A Solução:** Implementação de processamento assíncrono controlado via flag `WEBHOOK_ASSINCRONO`. A requisição é autenticada, deduplicada e o webhook responde imediatamente `HTTP 200` à Meta em **~15ms**. O trabalho pesado é delegado a uma `threading.Thread(daemon=True)`.
+* **Fluxo de Triagem e Ciclo de Vida da Thread:** A thread daemon **não é criada cegamente para qualquer requisição**. Ela só nasce se o payload sobreviver ao funil síncrono de checagens (*Early Return*):
+
+```mermaid
+flowchart TD
+    A["POST da Meta chega"] --> B["Thread Principal do Django (Síncrona)"]
+    B --> C{"Checagem 1: Mensagem Duplicada?"}
+    C -- "SIM" --> D["Responde 200: duplicado<br>❌ NENHUMA thread é criada!"]
+    C -- "NÃO" --> E{"Checagem 2: É Áudio/Foto/Figurinha?"}
+    E -- "SIM" --> F["Avisa no WhatsApp<br>Responde 200: tipo_nao_suportado<br>❌ NENHUMA thread é criada!"]
+    E -- "NÃO (É Texto Inédito!)" --> G["🚀 NASCE A THREAD DAEMON (Segundo Plano)"]
+    G --> H["Responde 200: recebido à Meta em 15ms"]
+    G --> I["Thread Daemon executa a IA e o Banco em paralelo"]
+```
+
 * **Gerenciamento de Recursos:** A thread executa sob um bloco `try ... finally` invocando explicitamente `django.db.connection.close()`, garantindo que cada thread independente encerre sua conexão e não esgote o pool do PostgreSQL.
 
 ### 2. Idempotência e Resiliência contra Reenvios
